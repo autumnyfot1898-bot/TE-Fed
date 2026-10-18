@@ -1,0 +1,86 @@
+task = "tomato"
+
+[experiment]
+method = "tefed"
+seeds = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+rounds = 30
+local_epochs = 2
+batch_size = 4
+manifest = "data/tomato/manifest.json"
+calibration = "data/tomato/calibration.json"
+output = "runs/tomato"
+device = "cuda:0"
+
+[model]
+architecture = "yolo26s.yaml"
+classes = 2
+specialists = 5
+specialist_width = 0.75
+image_size = 640
+depth_scale = 65535.0
+weights = ""
+head_loss_policy = "route_weighted"
+contrastive_dim = 128
+contrastive_feature_level = -1
+contrastive_roi_size = 1
+contrastive_sampling_ratio = 2
+
+[optimizer]
+learning_rate = 0.01
+final_learning_rate = 0.001
+warmup_rounds = 3
+momentum = 0.937
+weight_decay = 0.0005
+gradient_clip = 10.0
+amp = true
+
+[loss]
+alpha = 1.0
+beta = 0.5
+rho = 0.1
+gamma = 0.5
+temperature = 0.1
+
+[decision]
+reliability_coefficients = [0.22, 0.24, 0.16, 0.21, 0.24, 0.08]
+delta_d = 0.35
+delta_c = 0.5
+delta_g = 0.5
+tau_cov = 0.80
+tau_cls = 0.05
+tau_e = 0.65
+verification_geometry_threshold = 0.60
+tau_r = 0.65
+epsilon = 0.00000001
+reuse_cap = 6
+reuse_gate = 0.55
+pattern_cap = 2
+source_cap = 1
+tau_state = 0.50
+tau_s = 1.0
+lambda_s = 0.20
+allocation_tau = 0.50
+allocation_chi = 0.20
+routing_temperature = 0.50
+priority_coefficients = [0.15, 0.15, 0.25, 0.30, 0.25]
+render_budget = 1152
+
+[router]
+learning_rate = 0.001
+steps = 20
+load_balance = 0.02
+
+[renderer]
+enabled = true
+blender = "blender"
+scene = "assets/tomato_greenhouse_project_assets_style.blend"
+timeout = 300
+samples = 16
+
+[evaluation]
+monitor_every = 1
+views = ["participating", "unseen", "new-client", "hard"]
+prediction_confidence = 0.01
+max_detections = 100
+unseen_brightness = 0.65
+

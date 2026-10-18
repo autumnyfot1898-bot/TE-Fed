@@ -1,0 +1,19 @@
+name: Software tests
+on: [push, pull_request]
+jobs:
+  cpu:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: '0.13.1'
+          enable-cache: true
+      - run: uv lock --check
+      - run: uvx --from ruff==0.17.1 ruff check --select F821,F822,F823 src tests scripts
+      - run: uv sync --locked --extra cpu
+      - run: uv run --locked --extra cpu python -m tefed.main --help
+      - run: uv run --locked --extra cpu python -m unittest discover -s tests -t . -v

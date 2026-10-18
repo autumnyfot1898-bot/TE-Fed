@@ -1,0 +1,65 @@
+task = "dronevehicle"
+
+[experiment]
+method = "tefed"
+seeds = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+rounds = 30
+local_epochs = 2
+batch_size = 4
+manifest = "data/dronevehicle/manifest.json"
+calibration = "data/dronevehicle/calibration.json"
+output = "runs/dronevehicle"
+device = "cuda:0"
+
+[model]
+architecture = "yolo26s.yaml"
+classes = 5
+specialists = 5
+specialist_width = 0.75
+image_size = 640
+weights = ""
+head_loss_policy = "route_weighted"
+contrastive_dim = 128
+contrastive_feature_level = -1
+contrastive_roi_size = 1
+contrastive_sampling_ratio = 2
+detector_rgb_only = true
+
+[optimizer]
+learning_rate = 0.01
+final_learning_rate = 0.001
+warmup_rounds = 3
+momentum = 0.937
+weight_decay = 0.0005
+gradient_clip = 10.0
+amp = true
+
+[loss]
+alpha = 1.0
+beta = 0.5
+rho = 0.1
+gamma = 0.5
+temperature = 0.1
+
+[decision]
+render_budget = 1152
+reuse_cap = 6
+reuse_gate = 0.55
+lambda_s = 0.2
+
+[router]
+learning_rate = 0.001
+steps = 20
+load_balance = 0.02
+
+[renderer]
+enabled = true
+blender = "blender"
+scene = "assets/dronevehicle.blend"
+timeout = 300
+
+[evaluation]
+monitor_every = 1
+views = ["participating", "unseen", "new-client", "hard"]
+prediction_confidence = 0.01
+max_detections = 100

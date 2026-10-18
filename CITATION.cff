@@ -1,0 +1,21 @@
+cff-version: 1.2.0
+message: "If you use TE-Fed, please cite this software."
+type: software
+title: "TE-Fed: Correction with Source Evidence and Reuse by State Matching for Federated Semi-Supervised Multisensor Object Detection"
+authors:
+  - family-names: Sun
+    given-names: Pinghan
+  - family-names: Jin
+    given-names: Wenquan
+version: 2.6.0
+date-released: 2026-10-18
+license: AGPL-3.0-only
+abstract: >-
+  TE-Fed combines source-evidence correction and state-matched reuse for
+  federated semi-supervised multisensor object detection. The code includes
+  training, calibration, rendering, evaluation and analysis. Datasets, trained
+  weights and manuscript experiment records are not distributed.
+keywords:
+  - federated learning
+  - semi-supervised object detection
+  - multisensor perception
