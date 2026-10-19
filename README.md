@@ -5,7 +5,7 @@
 [![License](https://img.shields.io/badge/license-AGPL--3.0-blue)](LICENSE)
 ![Distribution](https://img.shields.io/badge/distribution-source%20code%20only-lightgrey)
 
-Code for **TE-Fed: Correction with Source Evidence and Reuse by State Matching for Federated Semi-Supervised Multisensor Object Detection**.
+Code for **TE-Fed: Correction with Source Evidence and Reuse by State Matching for Federated Semi-Supervised Multisensor Object Detection**. Current package version: **2.6.1**.
 
 [V2.6 changes](docs/CHANGELOG.md)
 
@@ -71,7 +71,7 @@ Software metadata is provided in [CITATION.cff](CITATION.cff). To cite TE-Fed:
   title   = {{TE-Fed}: Correction with Source Evidence and Reuse by State Matching
              for Federated Semi-Supervised Multisensor Object Detection},
   year    = {2026},
-  version = {2.6.0}
+  version = {2.6.1}
 }
 ```
 

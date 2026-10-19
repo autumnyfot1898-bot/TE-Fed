@@ -91,6 +91,7 @@ class NativeRemoteTests(unittest.TestCase):
         from tefed.engine import load_config, seed_everything, source_secret
         from tefed.model import RoutedYOLO, Router
         from tefed.software_fixture import create_fixture
+        from tefed.transport import partition_digest
         from tefed.worker import WorkerService, make_server, RemoteClientExecutor
         torch.set_num_threads(2)
         with tempfile.TemporaryDirectory() as folder, patch.dict(os.environ, {'TEFED_TRANSPORT_KEY': 't' * 32}):
@@ -199,14 +200,21 @@ class NativeRemoteTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     executor.execute('evaluate', model, router, calibration, client_id='client0', state=states['client0'])
                 coordinator_config['loss']['beta'] = .5
-                worker_image = next((root / 'worker0' / 'images').glob('*_rgb.png'))
+                worker_manifest = load_manifest(root / 'worker0' / 'manifest.json', strict_files=True)
+                worker_record = worker_manifest.by_split('labeled', 'client0')[0]
+                worker_image = worker_record.rgb
+                original_digest = partition_digest(worker_manifest, 'client0')
+                self.assertEqual(original_digest, executor.fingerprints['client0']['partition_sha256'])
                 previous = worker_image.read_bytes()
                 worker_image.write_bytes(previous + b'changed-input')
                 try:
+                    self.assertNotEqual(partition_digest(worker_manifest, 'client0'), original_digest)
                     with self.assertRaises(RuntimeError):
                         executor.execute('evaluate', model, router, calibration, client_id='client0', state=states['client0'])
                 finally:
                     worker_image.write_bytes(previous)
+                self.assertEqual(worker_image.read_bytes(), previous)
+                self.assertEqual(partition_digest(worker_manifest, 'client0'), original_digest)
             finally:
                 for server in servers:
                     server.shutdown(); server.server_close()

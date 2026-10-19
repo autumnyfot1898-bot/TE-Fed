@@ -1,6 +1,12 @@
 # V2.6
 
-Package version: `2.6.0`.
+Package version: `2.6.1`.
+
+## 2.6.1 - 19 October 2026
+
+- Select the transport tamper-check image from worker 0's client 0 manifest partition, making the fixture independent of filesystem enumeration order.
+
+## 2.6.0 - 18 October 2026
 
 - Case-level audit records link source observations, descriptors, rendered variants and client-round selections. Training records actual presentations, supervised presentations and attempted/applied/AMP-skipped step IDs per case.
 - Verification exports the fixed fidelity mask, intervals, measurements, weights, normalizers, active mass and first failed gate, including early exclusions.

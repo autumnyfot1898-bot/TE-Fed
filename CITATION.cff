@@ -7,8 +7,8 @@ authors:
     given-names: Pinghan
   - family-names: Jin
     given-names: Wenquan
-version: 2.6.0
-date-released: 2026-10-18
+version: 2.6.1
+date-released: 2026-10-19
 license: AGPL-3.0-only
 abstract: >-
   TE-Fed combines source-evidence correction and state-matched reuse for

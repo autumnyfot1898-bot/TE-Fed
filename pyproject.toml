@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "te-fed-experiments"
-version = "2.6.0"
+version = "2.6.1"
 description = "TE-Fed training and evaluation for federated semi-supervised multisensor detection"
 readme = "README.md"
 authors = [{name = "Pinghan Sun"}, {name = "Wenquan Jin"}]
