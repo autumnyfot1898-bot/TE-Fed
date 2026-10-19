@@ -10,7 +10,7 @@ help:
 	@echo "install   Sync the locked CPU environment"
 	@echo "check     Check the lockfile"
 	@echo "test      Run the software test suite"
-	@echo "smoke     Run a smoke test with generated inputs"
+	@echo "smoke     Run software smoke checks"
 	@echo "methods   List implemented methods"
 	@echo "train     Train with CONFIG, SEED, and OUTPUT"
 	@echo "docker    Build the optional CPU image (Docker required)"

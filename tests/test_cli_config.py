@@ -44,7 +44,7 @@ class ConfigurationTests(unittest.TestCase):
             self.assertTrue(payload['test_mode'])
             manifest = Path(payload['manifest'])
             self.assertTrue(manifest.is_file())
-            self.assertEqual(json.loads(manifest.read_text(encoding='utf-8'))['data_origin'], 'generated')
+            self.assertEqual(json.loads(manifest.read_text(encoding='utf-8'))['data_origin'], 'software_fixture')
 
     def test_actual_data_source_secret_missing_short_and_sufficient(self):
         config = {'experiment': {'test_mode': False}}

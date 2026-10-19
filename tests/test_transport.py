@@ -141,17 +141,17 @@ class NativeRemoteTests(unittest.TestCase):
                 model, router = RoutedYOLO(coordinator_config), Router()
                 base_model, base_router = payload_digest(module_state(model)), payload_digest(module_state(router))
                 states, persistent = {}, {}
-                case_dir = root / 'server-generated-case'
+                case_dir = root / 'server-rendered-case'
                 case_dir.mkdir()
                 from PIL import Image
                 image = np.full((64, 64, 3), 70, dtype=np.uint8)
                 image[16:48, 16:40] = [180, 45, 30]
                 Image.fromarray(image).save(case_dir / 'rgb.png')
                 np.save(case_dir / 'depth.npy', np.full((64, 64), 1.5, dtype=np.float32))
-                case = {'id': 'server-generated-test-case', 'round': 0, 'fidelity': .9,
+                case = {'id': 'server-rendered-test-case', 'round': 0, 'fidelity': .9,
                     'rgb': str(case_dir / 'rgb.png'), 'depth': str(case_dir / 'depth.npy'), 'nir': None,
                     'depth_unit_conversion': 1., 'targets': [{'box': [.25, .25, .625, .75], 'class_id': 0}],
-                    'focal_target_index': 0, 'render_metadata': {'data_origin': 'generated', 'server_generated': True}}
+                    'focal_target_index': 0, 'render_metadata': {'data_origin': 'software_fixture', 'server_rendered': True}}
                 for client_id in worker_settings:
                     rng = capture_rng_state()
                     local = execute_client_task(reference_config, reference, model, router, calibration, action='initialize', client_id=client_id)

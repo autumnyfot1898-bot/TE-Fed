@@ -175,7 +175,7 @@ def sensor_cues(rgb8, depth, nir):
     score = float(max(1 - valid_depth_fraction, q_nir, q_rgb))
     return score, {"laplacian_variance": variance, "rgb_clipping_fraction": clipping_fraction,
                    "q_rgb": q_rgb, "valid_depth_fraction": valid_depth_fraction,
-                   "nir_residual_robust_sigma": sigma, "q_nir_proxy": q_nir}
+                   "nir_residual_robust_sigma": sigma, "q_nir_luminance_residual": q_nir}
 
 
 def viewpoint_cue(depth_crop, box, source_class, width, height):
@@ -396,11 +396,11 @@ def main(request_path: Path, response_path: Path, *, group_adapter=None, perturb
     depth[dropout] = 0
     rgb = np.clip(rgb + rng.normal(0, 0.025 * control_attrs[7], rgb.shape), 0, 1)
     rgb8 = np.rint(rgb * 255).astype(np.uint8)
-    # Synthetic NIR proxy from registered luminance and noise.
+    # NIR from registered luminance and noise.
     gray = (0.299 * rgb8[:, :, 0] + 0.587 * rgb8[:, :, 1] + 0.114 * rgb8[:, :, 2]) / 255
     nir = np.clip(gray + rng.normal(0, 0.08 * control_attrs[7], gray.shape), 0, 1).astype(np.float32)
     write_png(out / "rgb.png", rgb8)
-    write_png(out / "nir_proxy.png", np.rint(nir * 255))
+    write_png(out / "nir.png", np.rint(nir * 255))
     np.save(out / "depth.npy", depth, allow_pickle=False)
     np.save(out / "nir.npy", nir, allow_pickle=False)
     np.save(out / "instances.npy", indices, allow_pickle=False)
@@ -423,7 +423,7 @@ def main(request_path: Path, response_path: Path, *, group_adapter=None, perturb
     else:
         viewpoint, viewpoint_measurements = None, {"reason": "missing_generic_class_aspect_prior"}
     measured = [size, None, occlusion, illumination, viewpoint, None, None, sensor]
-    measurement_types = ["SI_inverse_visible_bbox_scale", "missing_frozen_expert_class_probabilities", "rendered_visible_to_isolated_silhouette_proxy", "SI_crop_luminance" if illumination is not None else "missing_validation_luminance_median", "SI_plane_and_class_aspect_residual" if viewpoint is not None else "missing_generic_class_aspect_prior", "missing_validation_depth_and_temporal_reference", "missing_frozen_detector_proposal_count", "SI_style_actual_arrays_with_NIR_proxy"]
+    measurement_types = ["SI_inverse_visible_bbox_scale", "missing_frozen_expert_class_probabilities", "one_minus_rendered_visible_to_isolated_silhouette_ratio", "SI_crop_luminance" if illumination is not None else "missing_validation_luminance_median", "SI_plane_and_class_aspect_residual" if viewpoint is not None else "missing_generic_class_aspect_prior", "missing_validation_depth_and_temporal_reference", "missing_frozen_detector_proposal_count", "SI_arrays_with_luminance_noise_NIR"]
     labels = "\n".join(f"{t['class_id']} {(t['box'][0] + t['box'][2]) / 2:.8f} {(t['box'][1] + t['box'][3]) / 2:.8f} {t['box'][2] - t['box'][0]:.8f} {t['box'][3] - t['box'][1]:.8f}" for t in targets) + "\n"
     (out / "labels.txt").write_text(labels, encoding="utf-8")
     result = {
@@ -435,13 +435,13 @@ def main(request_path: Path, response_path: Path, *, group_adapter=None, perturb
         "attrs_measured": measured, "measured_attributes": measured,
         "geometry": None,
         "measurements": {"attribute_names": ATTRIBUTE_NAMES, "types": measurement_types, "focal_visible_pixels": int(main_focus_mask.sum()), "focal_isolated_pixels": int(isolated_mask.sum()), "focal_visibility": visibility, "crop_luminance": luminance, "valid_depth_fraction": float((depth[ya:yb, xa:xb] > 0).mean()), "image_size": [width, height], "sensor": sensor_measurements, "viewpoint": viewpoint_measurements},
-        "metadata": {"implementation": "tefed", "blender_version": bpy.app.version_string, "renderer": "Cycles CPU", "rgb_depth_nir_registration": "same_camera_same_frame", "depth_units": "asset_scene_units_not_calibrated_metres", "nir_is_proxy": True, "nir_model": "rendered_rgb_luminance_plus_seeded_noise_no_spectral_materials", "occlusion_is_proxy": True, "annotation_type": "visible_instance_mask_bbox", "minimum_annotation_pixels": 4, "controls": controls, "unknown_attributes_are_missing": True},
+        "metadata": {"implementation": "tefed", "blender_version": bpy.app.version_string, "renderer": "Cycles CPU", "rgb_depth_nir_registration": "same_camera_same_frame", "depth_units": "asset_scene_units_not_calibrated_metres", "nir_model": "rendered_rgb_luminance_plus_seeded_noise_no_spectral_materials", "occlusion_measurement": "one_minus_visible_to_isolated_silhouette_ratio", "annotation_type": "visible_instance_mask_bbox", "minimum_annotation_pixels": 4, "controls": controls, "unknown_attributes_are_missing": True},
     }
     result["metadata"].update(renderer_adapter=adapter_name, scene_data_origin=str(scene.get("tefed_data_origin", "asset")))
     if request.get("scene_class_map") is not None:
         result["metadata"].update(scene_class_map=request["scene_class_map"],
             class_identity="user_provided_asset_map_not_tomato_color_rule",
-            nir_and_thermal_ir_are_synthetic_proxies=True)
+            nir_and_thermal_ir_model="rendered_luminance_plus_seeded_noise_no_spectral_materials")
     (out / "targets.json").write_text(json.dumps(targets, indent=2), encoding="utf-8")
     response_path.write_text(json.dumps(result, indent=2, allow_nan=False), encoding="utf-8")
     print(f"TEFED_RENDER_RESPONSE={response_path}", flush=True)

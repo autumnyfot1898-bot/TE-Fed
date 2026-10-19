@@ -1,6 +1,4 @@
-"""Render user-supplied Blender scenes without modifying the source .blend.
-
-NIR is a synthetic grayscale/noise proxy, not a spectral simulation."""
+"""Render user-supplied Blender scenes; NIR uses luminance and noise."""
 
 from __future__ import annotations
 

@@ -1,4 +1,4 @@
-"""Synthetic inputs for detector, optimizer and checkpoint smoke tests."""
+"""Inputs for software smoke tests."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -54,11 +54,11 @@ def create_fixture(root: Path) -> dict:
             elif split == "hard":
                 hard_ids.append(uid)
     manifest_path = root / "manifest.json"
-    manifest_path.write_text(json.dumps({"data_origin": "generated", "class_names": ["ripe", "non-ripe"],
+    manifest_path.write_text(json.dumps({"data_origin": "software_fixture", "class_names": ["ripe", "non-ripe"],
         "calibration_ids": calibration_ids, "require_equal_standard_views": True,
         "views": {"Participating": standard_ids, "Unseen": standard_ids,
                   "New-client": standard_ids, "Hard": hard_ids}, "records": records}, indent=2), encoding="utf-8")
-    calibration = {"data_origin": "generated", "artifact_version": "generated-v1",
+    calibration = {"data_origin": "software_fixture", "artifact_version": "fixture-v1",
         "implementation": "tefed-software-check", "calibration_ids": calibration_ids,
         "T_C": 1., "luminance_median": .35, "depth_validation_median": 2.,
         "class_priors": {str(cls): {"a_c": math.log(.5), "b_c": -.5, "r_c_med": .75,
@@ -73,7 +73,7 @@ def create_fixture(root: Path) -> dict:
         "experiment": {"method": "tefed", "seeds": [0], "rounds": 2, "local_epochs": 1,
                        "batch_size": 4, "manifest": str(manifest_path), "calibration": str(calibration_path),
                        "output": str(root / "runs"), "device": "cpu", "test_mode": True,
-                       "allow_untrained_initial": True, "task": "tomato"},
+                       "task": "tomato"},
         "model": {"architecture": "yolo26n.yaml", "classes": 2, "specialists": 5,
                   "specialist_width": .5, "image_size": 64, "weights": "",
                   "head_loss_policy": "route_weighted"},

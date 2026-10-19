@@ -138,10 +138,10 @@ class CalibrationBindingTests(unittest.TestCase):
                 engine.validate_calibration_binding({'model':{'initial_checkpoint':'unused.pt'}},
                                                     {'initial_checkpoint_sha256':value})
 
-    def test_generated_calibration_requires_explicit_mode(self):
-        engine.validate_calibration_binding({'experiment':{'test_mode':True}}, {'data_origin':'generated'})
+    def test_fixture_calibration_requires_explicit_mode(self):
+        engine.validate_calibration_binding({'experiment':{'test_mode':True}}, {'data_origin':'software_fixture'})
         for config,artifact in (({'experiment':{'test_mode':True}},{}),
-                                ({'experiment':{'test_mode':False}},{'data_origin':'generated'})):
+                                ({'experiment':{'test_mode':False}},{'data_origin':'software_fixture'})):
             with self.subTest(config=config),self.assertRaisesRegex(ValueError,'model.initial_checkpoint'):
                 engine.validate_calibration_binding(config,artifact)
         with TemporaryDirectory() as directory:
@@ -150,7 +150,7 @@ class CalibrationBindingTests(unittest.TestCase):
             config['experiment']['test_mode']=False
             with patch.dict('os.environ',{'TEFED_SOURCE_SECRET':'k'*32}),\
                     patch('tefed.engine.RoutedYOLO') as constructor:
-                with self.assertRaisesRegex(ValueError,'Generated calibration requires experiment.test_mode=true'):
+                with self.assertRaisesRegex(ValueError,'Fixture calibration requires experiment.test_mode=true'):
                     engine.run_experiment(config,output_dir=root/'run')
                 constructor.assert_not_called()
                 self.assertFalse((root/'run').exists())
@@ -176,7 +176,7 @@ class CalibrationBindingTests(unittest.TestCase):
                     constructor.assert_not_called()
                     self.assertFalse(output.exists())
 
-    def test_test_mode_requires_generated_manifest_before_output(self):
+    def test_test_mode_requires_fixture_manifest_before_output(self):
         with TemporaryDirectory() as directory:
             root=Path(directory)
             config=create_fixture(root/'fixture')
@@ -189,7 +189,7 @@ class CalibrationBindingTests(unittest.TestCase):
                     manifest['data_origin']=origin
                 path.write_text(json.dumps(manifest))
                 with self.subTest(origin=origin),patch('tefed.engine.RoutedYOLO') as constructor:
-                    with self.assertRaisesRegex(ValueError,'test_mode requires manifest.data_origin=generated'):
+                    with self.assertRaisesRegex(ValueError,'test_mode requires manifest.data_origin=software_fixture'):
                         engine.run_experiment(config,output_dir=root/'run')
                     constructor.assert_not_called()
                     self.assertFalse((root/'run').exists())

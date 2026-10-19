@@ -42,7 +42,7 @@ def parser():
     evaluate.add_argument('--checkpoint',required=True)
     evaluate.add_argument('--config',required=True)
     evaluate.add_argument('--output',required=True)
-    smoke=commands.add_parser('smoke',help='Run a smoke test with generated inputs')
+    smoke=commands.add_parser('smoke',help='Run software smoke checks')
     smoke.add_argument('--output',required=True)
     smoke.add_argument('--device',default='cpu',help='PyTorch device, e.g. cpu or cuda:0')
     smoke.add_argument('--amp',action='store_true',help='Enable CUDA mixed precision')
@@ -181,7 +181,7 @@ def main(argv=None):
             # The fixture has few batches for scale calibration.
             config['optimizer']['amp_init_scale']=128.
         result=run_experiment(config,seed=0,output_dir=root/'run')
-        write_json(root/'smoke_status.json',{'data_origin':'generated',
+        write_json(root/'smoke_status.json',{'data_origin':'software_fixture',
                    'rounds':len(result['rounds']),'device':args.device,'amp':args.amp,
                    'output':result['output_dir']})
         print(f'Software smoke test finished: {root}')

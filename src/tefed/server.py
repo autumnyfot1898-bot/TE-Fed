@@ -349,7 +349,7 @@ def construct_cases(descriptors,model,router,source_states,participating_clients
         renderer_attrs=list(response["attrs_measured"])
         measured=list(cues["attrs"])
         for q in (0,2):
-            # Visible-mask geometry is a size/occlusion proxy, recorded in metadata.
+            # Use visible-mask size and occlusion measurements.
             measured[q]=renderer_attrs[q]
         variant={"id":case_id,"target_box":target_box,"attrs_measured":measured,"geometry":cues["G"]}
         frozen_inputs.update(attrs_measured=deepcopy(measured),geometry=cues['G'])

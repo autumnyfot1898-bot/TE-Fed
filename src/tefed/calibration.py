@@ -112,8 +112,8 @@ def condition_probe(sample: Mapping[str, Any], family: str, level: int, seed: in
         gray = rgb[..., 0] * .299 + rgb[..., 1] * .587 + rgb[..., 2] * .114
         rgb[foreground] = (1 - alpha) * rgb[foreground] + alpha * gray[foreground, None]
         params = {"object_desaturation": alpha, "semantic_labels_preserved": True,
-                  "proxy_for": "maturity_appearance" if task == "tomato" else "class_boundary_appearance",
-                  "physical_class_transition_simulated": False}
+                  "appearance_attribute": "maturity_appearance" if task == "tomato" else "class_boundary_appearance",
+                  "class_transition": "none"}
     else:
         sigma = (.02, .04, .06, .08)[level]
         dropout = (.02, .04, .06, .08)[level]
@@ -392,7 +392,7 @@ def build_calibration(
                     "depth_valid_fraction_minimum": .35, "height_depth_regression": "log(h/H)=a_c+b_c*log(max(z/z_val,1e-3))",
                     "area_depth_regression": "log(normalized_box_area)=intercept+slope*log(max(z/z_val,1e-3))",
                     "geometry_preserved": True, "ground_truth_preserved": True,
-                    "image_space_proxies": True, "maturity_transition_simulated": False,
+                    "perturbation_space": "image", "class_transition": "none",
                     "frozen_model_responsibility": "caller freezes weights, gradients and BN and supplies one selected checkpoint"}}
     # Reject nonfinite JSON values.
     json.dumps(artifact, allow_nan=False)

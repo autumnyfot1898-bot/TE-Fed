@@ -1,4 +1,4 @@
-"""Compatibility import for the synthetic fixture."""
+"""Compatibility import for test fixtures."""
 
 from tefed.software_fixture import create_fixture
 

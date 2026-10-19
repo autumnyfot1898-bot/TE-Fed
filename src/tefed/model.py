@@ -157,10 +157,10 @@ class RoutedYOLO(nn.Module):
     def make_criterion(self, head_id):
         from ultralytics.utils.loss import E2ELoss, v8DetectionLoss
         # Expose head, stride, and hyperparameters to the native loss.
-        proxy = nn.Module()
-        proxy.model = nn.ModuleList([self.heads[head_id].detect])
-        proxy.args = self.loss_args
-        return E2ELoss(proxy) if self.heads[head_id].detect.end2end else v8DetectionLoss(proxy)
+        loss_model = nn.Module()
+        loss_model.model = nn.ModuleList([self.heads[head_id].detect])
+        loss_model.args = self.loss_args
+        return E2ELoss(loss_model) if self.heads[head_id].detect.end2end else v8DetectionLoss(loss_model)
 
     def decode_head(self, output, head_id, image_size, *, branch='one2many'):
         """Decode native distances without detaching strong-view gradients."""

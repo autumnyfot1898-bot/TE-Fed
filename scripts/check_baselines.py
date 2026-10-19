@@ -1,4 +1,4 @@
-"""Check registered methods with generated test inputs."""
+"""Check registered methods with software fixtures."""
 from __future__ import annotations
 
 import argparse
@@ -81,7 +81,7 @@ def validate_metrics(metrics):
             require(isinstance(value, Real) and not isinstance(value, bool) and math.isfinite(value),
                     f"Missing or nonfinite {view}.{key}")
             require(0 <= value <= 1, f"AP outside [0, 1]: {view}.{key}")
-        require(values.get("num_images") == 2, f"Incorrect generated view cardinality: {view}")
+        require(values.get("num_images") == 2, f"Incorrect fixture view cardinality: {view}")
 
 
 def validate_rounds(rows, method, policies, clients, rounds, epochs):
@@ -109,7 +109,7 @@ def validate_rounds(rows, method, policies, clients, rounds, epochs):
             require(successful > 0 and attempted == successful + skipped, "Optimizer counters are inconsistent")
             require(isinstance(local.get("mean_step_loss"), Real), "Missing mean step loss")
             require(local.get("presentations", {}).get("labeled") == 2 * epochs,
-                    "Generated labeled observations were not all trained")
+                    "Labeled fixture observations were not all presented")
             if method in PSEUDO_METHODS:
                 require(local["presentations"].get("pseudo", 0) > 0, f"Pseudo path was not exercised: {method}")
             if method in TEACHER_METHODS:
@@ -130,13 +130,13 @@ def validate_rounds(rows, method, policies, clients, rounds, epochs):
 
 
 def validate_summary(summary):
-    require(summary.get("data_origin") == "generated", "Summary must identify generated data")
+    require(summary.get("data_origin") == "software_fixture", "Summary must identify software fixtures")
     requested = summary.get("requested_methods", [])
     require(requested and len(set(requested)) == len(requested), "Requested method coverage is invalid")
     rows = summary.get("methods", [])
     require([row.get("method") for row in rows] == requested, "Summary method coverage differs from request")
     require(all(row.get("status") == "passed" for row in rows), "One or more method checks failed")
-    require(summary.get("paper_reproduction") is False, "Generated checks must not claim paper reproduction")
+    require(summary.get("paper_reproduction") is False, "Software checks must not claim paper reproduction")
 
 
 @contextmanager
@@ -186,14 +186,14 @@ def verify_run(result, method, requested_config, evidence, observed_calls):
         require((output / name).is_file(), f"Missing output: {name}")
     saved = read_json(output / "configuration.json")
     require(saved["experiment"]["method"] == method, "Saved configuration method mismatch")
-    require(saved["experiment"].get("test_mode") is True, "Generated run lacks test mode")
+    require(saved["experiment"].get("test_mode") is True, "Software check lacks test mode")
     policies = policy_schedule(method, saved)
     require(saved.get("resolved_baseline_policies") == policies, "Saved resolved policy schedule mismatch")
     for section in ("experiment", "baselines", "optimizer", "loss", "decision", "evaluation"):
         require(saved.get(section) == requested_config.get(section), f"Requested/saved configuration mismatch: {section}")
     manifest = load_manifest(saved["experiment"]["manifest"], strict_files=True)
     clients = sorted({str(record.client_id) for record in manifest.by_split("labeled")})
-    require(manifest.metadata.get("data_origin") == "generated", "Fixture origin is not generated")
+    require(manifest.metadata.get("data_origin") == "software_fixture", "Unexpected fixture origin")
     rows = read_jsonl(output / "rounds.jsonl")
     require(rows == result["rounds"], "Returned and persisted round histories differ")
     client_steps = validate_rounds(rows, method, policies, clients,
@@ -255,7 +255,7 @@ def verify_run(result, method, requested_config, evidence, observed_calls):
     write_json(evidence / "observed_baseline_calls.json", observed_calls)
 
     calibration = read_json(output / "calibration.json")
-    require(calibration.get("data_origin") == "generated", "Calibration origin is not generated")
+    require(calibration.get("data_origin") == "software_fixture", "Unexpected fixture calibration origin")
     kwargs = {}
     if method == "local":
         require(checkpoint.get("checkpoint_kind") == "local_bundle", "Missing local checkpoint bundle")
@@ -291,7 +291,7 @@ def verify_run(result, method, requested_config, evidence, observed_calls):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--output", required=True, type=Path, help="New directory for generated inputs and evidence")
+    parser.add_argument("--output", required=True, type=Path, help="New directory for inputs and check outputs")
     parser.add_argument("--methods", nargs="+", help="Registered names; omitted means every registered method")
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--threads", type=int, default=2)
@@ -313,7 +313,7 @@ def main(argv=None):
     root = args.output.expanduser().resolve()
     root.mkdir(parents=True, exist_ok=False)
     torch.set_num_threads(args.threads)
-    base = create_fixture(root / "generated_inputs")
+    base = create_fixture(root / "fixture_inputs")
     base["experiment"].update(seed=args.seed, local_epochs=2, device=args.device)
     base["model"]["architecture"] = tiny_architecture()
     default_policies = {method: policy_schedule(method, base) for method in methods}
@@ -321,12 +321,11 @@ def main(argv=None):
     if args.fedawa_mode == "fedawa_paper":
         require("consistent_teacher_fedawa" in methods, "--fedawa-mode requires consistent_teacher_fedawa")
         base["baselines"]["consistent_teacher_fedawa"]["aggregation_mode"] = args.fedawa_mode
-    summary = {"schema_version": 1, "data_origin": "generated", "paper_reproduction": False,
-        "purpose": "Native detector software checks with generated inputs and untrained initialization",
+    summary = {"schema_version": 2, "data_origin": "software_fixture", "paper_reproduction": False,
+        "purpose": "Native detector software checks", "initialization": "random",
         "coverage_overrides": base["baselines"], "default_baseline_policies": default_policies,
-        "limitations": ["Tiny native detector replaces the paper architecture", "No pretrained or real dataset accuracy claim",
-                        "Rendering and correction reuse are disabled; only correction-capable method dispatch is checked",
-                        "Expert contrastive and consistency coefficients remain disabled in this fixture"],
+        "architecture": "tiny_native",
+        "coverage": {"rendering": False, "correction_reuse": False, "auxiliary_losses": False},
         "python_executable": sys.executable, "threads": args.threads, "seed": args.seed,
         "runner_sha256": file_sha256(__file__),
         "requested_methods": methods, "registered_methods": list(METHOD_REGISTRY),
@@ -365,7 +364,7 @@ def main(argv=None):
     summary["seconds"] = time.perf_counter() - started
     summary["finished_utc"] = datetime.now(timezone.utc).isoformat()
     write_json(root / "summary.json", summary)
-    print(f"Generated baseline checks: {summary['status']}; evidence: {root / 'summary.json'}", flush=True)
+    print(f"Baseline software checks: {summary['status']}; evidence: {root / 'summary.json'}", flush=True)
     return 0 if summary["status"] == "passed" else 1
 
 

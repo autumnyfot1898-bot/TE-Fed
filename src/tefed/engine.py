@@ -96,8 +96,8 @@ def validate_run_config(config):
 
 
 def validate_manifest_config(config,manifest):
-    if config.get('experiment',{}).get('test_mode',False) and manifest.metadata.get('data_origin')!='generated':
-        raise ValueError('experiment.test_mode requires manifest.data_origin=generated')
+    if config.get('experiment',{}).get('test_mode',False) and manifest.metadata.get('data_origin')!='software_fixture':
+        raise ValueError('experiment.test_mode requires manifest.data_origin=software_fixture')
     classes=config.get('model',{}).get('classes',2)
     names=manifest.metadata.get('class_names')
     if names is not None and len(names)!=classes:
@@ -781,7 +781,7 @@ def evaluate_remote_models(model,router,manifest,states,calibration,config,outpu
 
 def validate_calibration_binding(config,calibration):
     """Bind measured calibration to the common initial checkpoint."""
-    if config.get('experiment',{}).get('test_mode',False) and calibration.get('data_origin')=='generated':
+    if config.get('experiment',{}).get('test_mode',False) and calibration.get('data_origin')=='software_fixture':
         return
     initial=config.get('model',{}).get('initial_checkpoint')
     if not initial:
@@ -879,11 +879,11 @@ def run_experiment(config,seed=0,output_dir=None,labels_only=False,resume=None):
         calibration={'bootstrap_only':True,'T_C':1.,'state_prior':{'q':.5,'p':.5,'h':[.2]*5}}
     else:
         calibration=json.loads(Path(cfg['experiment']['calibration']).read_text(encoding='utf-8'))
-        if calibration.get('data_origin')=='generated' and not cfg['experiment'].get('test_mode',False):
-            raise ValueError('Generated calibration requires experiment.test_mode=true')
+        if calibration.get('data_origin')=='software_fixture' and not cfg['experiment'].get('test_mode',False):
+            raise ValueError('Fixture calibration requires experiment.test_mode=true')
         validate_calibration_binding(cfg,calibration)
     initial=cfg['model'].get('initial_checkpoint')
-    if not initial and not labels_only and not cfg['experiment'].get('allow_untrained_initial',False):
+    if not initial and not labels_only and not cfg['experiment'].get('test_mode',False):
         raise ValueError('Provide model.initial_checkpoint; use pretrain to prepare a shared initial detector')
     if not cfg.get('replay'):
         validate_renderer_setup(cfg,policy)

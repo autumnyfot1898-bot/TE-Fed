@@ -397,11 +397,7 @@ def oriented_to_horizontal(box: Sequence[float] | Sequence[Sequence[float]], *,
 
 def apply_unseen(sample: Mapping[str, Any], *, identity: str | int,
                  perturbation: Mapping[str, float | bool], seed: int = 0) -> dict[str, Any]:
-    """Apply deterministic observation perturbations without updating state.
-
-    Brightness, contrast, sensor noise/scale, translation, and flip affect
-    aligned modalities and boxes together. Translation fractions use image
-    width/height; translation does not simulate physical camera pose."""
+    """Apply aligned image-space perturbations; translation uses image fractions."""
     allowed = {"rgb_brightness", "rgb_contrast", "depth_scale", "depth_noise_std",
                "nir_brightness", "nir_noise_std", "translate_x", "translate_y", "horizontal_flip"}
     unknown = set(perturbation) - allowed

@@ -493,6 +493,6 @@ def case_event_proportions(retained_cases=(),selected_events=(),verification_rec
     return {"retained_rta":_ratio(sum(r["hit"] for r in retained.values()),len(retained),"unique_retained_cases"),
             "selected_rta":_ratio(sum(r["hit"] for r in events.values()),len(events),"unique_client_round_case_selection_events"),
             "qualification":qualification,"retention":_ratio(sum(entered.values()),len(entered),"variants_entering_verification"),
-            "reference":"renderer-generated focal annotation, not human ground truth",
+            "reference":"renderer focal annotation",
             "rta_hit_rule":"predicted class equals renderer class and IoU>=0.50; missing prediction is a miss",
             "local_epoch_duplicates_add_events":False}

@@ -43,7 +43,7 @@ def write_run(path,seed):
         "evaluation":{"views":["hard"]}}
     (path/"environment.json").write_text(json.dumps(environment),encoding="utf-8")
     (path/"configuration.json").write_text(json.dumps(configuration),encoding="utf-8")
-    (path/"calibration.json").write_text(json.dumps({"data_origin":"generated","T_C":1.}),encoding="utf-8")
+    (path/"calibration.json").write_text(json.dumps({"data_origin":"software_fixture","T_C":1.}),encoding="utf-8")
     (path/"metrics.json").write_text(json.dumps({"hard":{"mAP50":.2+.1*seed,"AP75":.1+.1*seed,"mAP50_95":.15+.1*seed}}),encoding="utf-8")
     (path/"rounds.jsonl").write_text(json.dumps(ledger()[0])+"\n",encoding="utf-8")
     return path
@@ -222,7 +222,7 @@ class AnalysisTests(unittest.TestCase):
     def test_seed_summary_detects_changed_calibration_snapshot(self):
         with TemporaryDirectory() as folder:
             paths=[write_run(Path(folder)/f"seed_{seed}",seed) for seed in (0,1)]
-            (paths[1]/"calibration.json").write_text(json.dumps({"data_origin":"generated","T_C":2.}),encoding="utf-8")
+            (paths[1]/"calibration.json").write_text(json.dumps({"data_origin":"software_fixture","T_C":2.}),encoding="utf-8")
             with self.assertRaisesRegex(ValueError,"fixed protocol"):
                 analyze_run_dirs(paths,expected_seeds=(0,1))
 

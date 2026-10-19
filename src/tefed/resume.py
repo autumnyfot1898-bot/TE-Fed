@@ -1,4 +1,4 @@
-"""Atomic round snapshots and recovery of generated run files."""
+"""Atomic round snapshots and recovery of run files."""
 from contextlib import contextmanager
 from functools import wraps
 import hashlib

@@ -1,4 +1,4 @@
-"""CPU integration with synthetic data and rendering disabled."""
+"""CPU integration with test fixtures and rendering disabled."""
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from copy import deepcopy
@@ -48,7 +48,7 @@ class FixtureTests(unittest.TestCase):
                 self.assertEqual(len(manifest.by_split("test", client)), 1)
                 self.assertEqual(len(manifest.by_split("hard", client)), 1)
             calibration = json.loads(Path(config["experiment"]["calibration"]).read_text(encoding="utf-8"))
-            self.assertEqual(calibration["data_origin"], "generated")
+            self.assertEqual(calibration["data_origin"], "software_fixture")
             self.assertTrue(config["experiment"]["test_mode"])
             self.assertFalse(config["renderer"]["enabled"])
 

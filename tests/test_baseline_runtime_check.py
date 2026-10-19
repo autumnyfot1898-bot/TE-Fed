@@ -1,4 +1,4 @@
-"""Failure gates for the generated-data baseline check report."""
+"""Validation of baseline software checks."""
 from copy import deepcopy
 import unittest
 
@@ -35,7 +35,7 @@ class RuntimeCheckReportTests(unittest.TestCase):
                 validate_metrics(metrics)
 
     def test_summary_cannot_pass_when_a_method_failed_was_omitted_or_origin_is_ambiguous(self):
-        good = {"data_origin": "generated", "paper_reproduction": False,
+        good = {"data_origin": "software_fixture", "paper_reproduction": False,
                 "requested_methods": ["local", "fedavg"],
                 "methods": [{"method": "local", "status": "passed"}, {"method": "fedavg", "status": "passed"}]}
         validate_summary(good)

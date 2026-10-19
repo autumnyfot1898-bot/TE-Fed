@@ -49,7 +49,7 @@ Software citation metadata is available in [CITATION.cff](CITATION.cff).
   title   = {{TE-Fed}: Correction with Source Evidence and Reuse by State Matching
              for Federated Semi-Supervised Multisensor Object Detection},
   year    = {2026},
-  version = {2.6.2},
+  version = {2.6.3},
   url     = {https://github.com/autumnyfot1898-bot/TE-Fed}
 }
 ```
