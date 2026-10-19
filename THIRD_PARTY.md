@@ -5,4 +5,4 @@
 - **NumPy**, BSD-3-Clause; **Pillow**, HPND; **SciPy**, BSD-3-Clause. These are dependencies, not bundled copies.
 - **Blender**, GPL. The renderer invokes a separately installed executable. Blender, local `.blend` scenes and source meshes are not bundled.
 
-Local scene/model/data assets have their own provenance and permissions. The code license does not grant rights to redistribute them. Generated software-test fixtures are explicitly labelled and are not experimental evidence.
+Local scene/model/data assets have their own provenance and permissions. The code license does not grant rights to redistribute them.

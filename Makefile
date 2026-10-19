@@ -10,9 +10,9 @@ help:
 	@echo "install   Sync the locked CPU environment"
 	@echo "check     Check the lockfile"
 	@echo "test      Run the software test suite"
-	@echo "smoke     Run the synthetic software fixture"
+	@echo "smoke     Run a smoke test with generated inputs"
 	@echo "methods   List implemented methods"
-	@echo "train     Train with a CPU-ready local CONFIG, SEED, and OUTPUT"
+	@echo "train     Train with CONFIG, SEED, and OUTPUT"
 	@echo "docker    Build the optional CPU image (Docker required)"
 
 install:

@@ -24,7 +24,7 @@ CONDITION_ALIASES = {'illum': 'illumination', 'low_illumination': 'illumination'
                      'mat': 'class_boundary', 'maturity': 'class_boundary',
                      'maturity_boundary': 'class_boundary', 'sens': 'sensing'}
 METHOD_SECTIONS = ('decision', 'loss', 'router', 'renderer', 'baseline', 'baselines',
-                   'factorial', 'replay')
+                   'factorial', 'replay', 'resolved_baseline_policies')
 
 
 def _number(value, name, low=0., high=1.):

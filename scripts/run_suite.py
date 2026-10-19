@@ -74,7 +74,7 @@ def _job_config(config, manifest, job):
     resolved['experiment']['seed'] = job['seed']
     method = resolved['experiment'].get('method', 'tefed')
     resolved['experiment']['method'] = method
-    if not policy_dict(method, 0, 0)['use_experts']:
+    if not policy_dict(method, 0, 0, resolved)['use_experts']:
         resolved['model']['specialists'] = 0
     return resolved
 
@@ -194,6 +194,11 @@ def _inspect_job(job, manifest, total_rounds, committed=None):
             raise ValueError('Snapshot round history is not contiguous')
         configuration = _read(output / 'configuration.json')
         configuration.pop('_config_path', None)
+        resolved_policies = configuration.pop('resolved_baseline_policies', None)
+        if resolved_policies is not None:
+            from tefed.baselines import policy_schedule
+            if resolved_policies != policy_schedule(configuration['experiment']['method'], configuration):
+                raise ValueError('Recorded baseline policies differ from the configuration')
         if canonical_hash(configuration) != job['configuration_sha256']:
             raise ValueError('Job configuration differs')
         binding = snapshot['binding']
@@ -257,10 +262,11 @@ def _publish_factorial(root, manifest, execution):
 
 
 def run_suite(config, name, output, *, execute=False, resume=False, runner=None):
-    from tefed.engine import run_experiment
+    from tefed.engine import run_experiment, validate_run_config
     from tefed.experiments import FACTORIAL_DEFINITIONS
     from tefed.resume import run_lock
     root = Path(output).expanduser().resolve()
+    validate_run_config(config)
     if resume and config.get('communication', {}).get('mode', 'local') != 'local':
         raise ValueError('Suite resume requires communication.mode=local')
     with run_lock(root):

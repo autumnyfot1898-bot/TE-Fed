@@ -33,7 +33,7 @@ def _variant_config(config, method, seed):
     value = deepcopy(config)
     value['experiment']['method'] = method
     value['experiment']['seed'] = int(seed)
-    if not policy_dict(method, 0, 0)['use_experts']:
+    if not policy_dict(method, 0, 0, value)['use_experts']:
         value['model']['specialists'] = 0
     return value
 

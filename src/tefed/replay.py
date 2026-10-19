@@ -27,6 +27,11 @@ def _integer(value, name):
 
 def _training_binding(config):
     resolved = deepcopy(config)
+    recorded_policies = resolved.pop('resolved_baseline_policies', None)
+    if recorded_policies is not None:
+        from .baselines import policy_schedule
+        if recorded_policies != policy_schedule(resolved['experiment'].get('method', 'tefed'), resolved):
+            raise ValueError('Recorded baseline policies differ from the training configuration')
     resolved.pop('_config_path', None); resolved.pop('replay', None)
     for key in ('seed', 'seeds', 'output', 'manifest', 'calibration'):
         resolved['experiment'].pop(key, None)

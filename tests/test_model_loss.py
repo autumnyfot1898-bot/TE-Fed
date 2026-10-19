@@ -58,6 +58,38 @@ class ModelLossTests(unittest.TestCase):
         probs = router(torch.zeros(2,17))
         self.assertTrue(torch.allclose(probs.sum(-1),torch.ones(2)))
 
+    def test_prediction_branch_matches_native_without_training_branch(self):
+        self.model.eval()
+        x = torch.rand(1, 5, 64, 64)
+        with torch.no_grad():
+            features = self.model.features(x)
+            for index in (0, 1):
+                head = self.model.heads[index]
+                expected = self.model.decode_head(head(features), index, x.shape[-2:], branch='one2one')
+                calls = []
+                handle = head.detect.cv2[0].register_forward_hook(lambda *args: calls.append('one2many'))
+                try:
+                    actual = self.model.decode_head(head.predict_raw(features), index, x.shape[-2:])
+                finally:
+                    handle.remove()
+                self.assertEqual(calls, [])
+                for field in ('boxes', 'logits', 'scores'):
+                    torch.testing.assert_close(actual[field], expected[field], rtol=0, atol=0)
+
+    def test_capacity_counts_executed_parameter_subset(self):
+        cap = self.model.capacity((0, 1, 3))
+        self.assertEqual(cap['total_parameters'], cap['shared_parameters'] + sum(cap['head_parameters']))
+        self.assertEqual(cap['prediction_shared_parameters'],
+                         cap['shared_parameters'] - cap['contrastive_parameters'])
+        self.assertEqual(cap['active_prediction_parameters'], cap['prediction_shared_parameters'] +
+                         sum(cap['prediction_head_parameters'][i] for i in (0, 1, 3)))
+        self.assertLess(cap['active_prediction_parameters'], cap['all_heads_prediction_parameters'])
+        self.assertLess(cap['all_heads_prediction_parameters'], cap['total_parameters'])
+        self.assertEqual(cap['active_heads'], [0, 1, 3])
+        for indices in ((), (0, 0), (-1,), (6,), (True,), ('0',)):
+            with self.subTest(indices=indices), self.assertRaises(ValueError):
+                self.model.capacity(indices)
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -15,9 +15,9 @@ import numpy as np
 METHOD_REGISTRY = {
     "local": "Local-only detector; no server aggregation",
     "fedavg": "Sample-count-weighted aggregation",
-    "fedprox": "FedAvg with local proximal coefficient 0.01",
+    "fedprox": "FedAvg with local proximal regularization",
     "fedbn": "FedAvg with client-local BatchNorm parameters and buffers",
-    "confidence": "Fixed-confidence self-training at 0.75",
+    "confidence": "Fixed-confidence self-training",
     "consistent_teacher_fedawa": "EMA consistency with an explicit adaptive aggregation adaptation",
     "fedsto": "Round-reset EMA teacher and two-stage local training",
     "fsslod": "Scheduled EMA teacher with an explicit elastic anchoring adaptation",
@@ -25,6 +25,77 @@ METHOD_REGISTRY = {
     "generic_hc": "Generic hard-case correction with the matched rendering/reuse schedule",
     "tefed": "Source-evidence verification and state-matched reuse",
 }
+
+_TEACHER_METHODS = {"consistent_teacher_fedawa", "fedsto", "fsslod"}
+_EXPERT_METHODS = {"server_moe", "generic_hc", "tefed"}
+BASELINE_CONFIG_KEYS = {method: set() for method in METHOD_REGISTRY}
+for _method in {"confidence"} | _TEACHER_METHODS:
+    BASELINE_CONFIG_KEYS[_method].add("pseudo_threshold")
+for _method in _TEACHER_METHODS:
+    BASELINE_CONFIG_KEYS[_method].update({"teacher_decay", "consistency_weight"})
+for _method in _EXPERT_METHODS:
+    BASELINE_CONFIG_KEYS[_method].add("consistency_weight")
+BASELINE_CONFIG_KEYS["fedprox"].add("proximal_mu")
+BASELINE_CONFIG_KEYS["fedsto"].update({"orthogonal_coefficient", "head_only_epochs"})
+BASELINE_CONFIG_KEYS["fsslod"].update({"elastic_coefficient", "teacher_decay_start", "teacher_decay_end"})
+BASELINE_CONFIG_KEYS["consistent_teacher_fedawa"].update({
+    "aggregation_temperature", "aggregation_cap", "reference_weighting",
+    "aggregation_mode", "fedawa_steps", "fedawa_learning_rate",
+})
+
+
+def validate_baseline_config(config: Mapping[str, Any] | None = None) -> None:
+    """Validate every method table, including inactive methods."""
+    if config is None:
+        return
+    if not isinstance(config, Mapping):
+        raise ValueError("config must be a mapping")
+    tables = config.get("baselines", {})
+    if not isinstance(tables, Mapping):
+        raise ValueError("baselines must contain method tables")
+    for method, overrides in tables.items():
+        if method not in BASELINE_CONFIG_KEYS:
+            raise ValueError(f"Unknown baselines method: {method!r}")
+        if not isinstance(overrides, Mapping):
+            raise ValueError(f"baselines.{method} must be a table")
+        for key, value in overrides.items():
+            name = f"baselines.{method}.{key}"
+            if key not in BASELINE_CONFIG_KEYS[method]:
+                raise ValueError(f"Unknown or inapplicable baseline option: {name}")
+            if key == "reference_weighting":
+                if not isinstance(value, str) or value not in {"uniform", "sample_count"}:
+                    raise ValueError(f"{name} must be uniform or sample_count")
+                continue
+            if key == "aggregation_mode":
+                if not isinstance(value, str) or value not in {"directional", "fedawa_paper"}:
+                    raise ValueError(f"{name} must be directional or fedawa_paper")
+                continue
+            if key == "fedawa_steps":
+                if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+                    raise ValueError(f"{name} must be a positive integer")
+                continue
+            if key == "head_only_epochs":
+                epochs = config.get("experiment", {}).get("local_epochs", 2)
+                if isinstance(epochs, bool) or not isinstance(epochs, int) or epochs < 1:
+                    raise ValueError("experiment.local_epochs must be a positive integer")
+                if isinstance(value, bool) or not isinstance(value, int) or value < 0 or value >= epochs:
+                    raise ValueError(f"{name} must be a nonnegative integer below experiment.local_epochs")
+                continue
+            number = _nonnegative(value, name)
+            if key in {"pseudo_threshold", "teacher_decay", "teacher_decay_start", "teacher_decay_end", "aggregation_cap"} and number > 1:
+                raise ValueError(f"{name} must lie in [0, 1]")
+            if key in {"aggregation_temperature", "aggregation_cap", "fedawa_learning_rate"} and number == 0:
+                raise ValueError(f"{name} must be positive")
+        if method == "consistent_teacher_fedawa":
+            paper = overrides.get("aggregation_mode", "directional") == "fedawa_paper"
+            incompatible = {"aggregation_temperature", "aggregation_cap", "reference_weighting"} if paper else {"fedawa_steps", "fedawa_learning_rate"}
+            if incompatible & overrides.keys():
+                raise ValueError(f"Inapplicable options for baselines.{method}.aggregation_mode: {sorted(incompatible & overrides.keys())}")
+        if method == "fsslod":
+            if "teacher_decay" in overrides and {"teacher_decay_start", "teacher_decay_end"} & overrides.keys():
+                raise ValueError("FSSLOD teacher_decay cannot be combined with schedule endpoints")
+            if overrides.get("teacher_decay_start", .99) > overrides.get("teacher_decay_end", .999):
+                raise ValueError("FSSLOD teacher_decay_start must not exceed teacher_decay_end")
 
 
 def _nonnegative(value: Real, name: str) -> float:
@@ -235,17 +306,20 @@ def orthogonality_penalty(model, coefficient: float = 0.05, active_heads: Sequen
     return (sum(terms, zero) / len(terms) if terms else zero) * coefficient
 
 
-def fedsto_set_trainable(model, epoch_index: int, active_heads: Sequence[int] | None = None) -> dict[str, Any]:
-    """Freeze shared modules and their BN at epoch 0; unfreeze at epoch 1."""
-    if not isinstance(epoch_index, int) or isinstance(epoch_index, bool) or epoch_index not in (0, 1):
-        raise ValueError("FedSTO uses zero-based epoch_index 0 or 1")
+def fedsto_set_trainable(model, epoch_index: int, active_heads: Sequence[int] | None = None,
+                        *, head_only_epochs: int = 1) -> dict[str, Any]:
+    """Freeze shared modules and their BN during the configured first stage."""
+    if not isinstance(epoch_index, int) or isinstance(epoch_index, bool) or epoch_index < 0:
+        raise ValueError("epoch_index must be a nonnegative integer")
     if not hasattr(model, "trunk") or not hasattr(model, "heads"):
         raise ValueError("FedSTO stage control requires model.trunk and model.heads")
+    if isinstance(head_only_epochs, bool) or not isinstance(head_only_epochs, int) or head_only_epochs < 0:
+        raise ValueError("head_only_epochs must be a nonnegative integer")
     chosen_list = list(range(len(model.heads))) if active_heads is None else list(active_heads)
     if len(chosen_list) != len(set(chosen_list)) or any(not isinstance(index, int) or isinstance(index, bool) or not 0 <= index < len(model.heads) for index in chosen_list):
         raise ValueError("active_heads must contain distinct valid head indices")
     chosen = set(chosen_list)
-    freeze = epoch_index == 0
+    freeze = epoch_index < head_only_epochs
     for name in ("trunk", "fusion", "contrastive_projection"):
         module = getattr(model, name, None)
         if module is not None:
@@ -289,11 +363,7 @@ def flatten_update_vector(update: Mapping[str, Any], *, shared_only: bool = True
 
 
 def adaptive_aggregation_weights(update_vectors, validation_gains=None, *, sample_counts=None, temperature: float = 1.0, cap: float = 0.50) -> np.ndarray:
-    """CT+FedAWA adaptation using shared-parameter delta vectors.
-
-    Combine directional cosine scores with clipped fractional validation gains,
-    then project softmax weights onto a simplex bounded by cap. This is not the
-    official FedAWA optimizer; two clients with cap=.5 must receive equal weight."""
+    """Compute capped directional weights from shared-parameter deltas."""
     vectors = np.asarray(update_vectors, dtype=np.float64)
     if vectors.ndim != 2 or len(vectors) < 2 or not np.isfinite(vectors).all():
         raise ValueError("update_vectors must be a finite n-by-d matrix with n >= 2")
@@ -335,19 +405,29 @@ def adaptive_aggregation_weights(update_vectors, validation_gains=None, *, sampl
     return result
 
 
-def policy_dict(method: str, round_index: int, epoch_index: int) -> dict[str, Any]:
-    """Return the zero-based 30-round, two-epoch policy.
-
-    Read once per epoch; reset_teacher_each_round applies only at round start.
-    Local/FedAvg/FedProx/FedBN use labels; teacher/self-training uses threshold
-    .75; expert methods use routed reliability."""
+def policy_dict(method: str, round_index: int, epoch_index: int,
+                config: Mapping[str, Any] | None = None) -> dict[str, Any]:
+    """Resolve one epoch's policy from validated method overrides."""
     if not isinstance(method, str) or method not in METHOD_REGISTRY:
         raise ValueError(f"Unknown method {method!r}; choose from {list(METHOD_REGISTRY)}")
-    # Constant EMA methods still require valid protocol settings.
-    scheduled = fsslod_ema_decay(round_index, epoch_index)
-    experts = method in {"server_moe", "generic_hc", "tefed"}
-    teacher = method in {"consistent_teacher_fedawa", "fedsto", "fsslod"}
-    return {
+    validate_baseline_config(config)
+    experiment = (config or {}).get("experiment", {})
+    rounds, epochs = experiment.get("rounds", 30), experiment.get("local_epochs", 2)
+    for name, count in [("rounds", rounds), ("local_epochs", epochs)]:
+        if isinstance(count, bool) or not isinstance(count, int) or count < 1:
+            raise ValueError(f"experiment.{name} must be a positive integer")
+    for name, index, count in [("round_index", round_index, rounds), ("epoch_index", epoch_index, epochs)]:
+        if isinstance(index, bool) or not isinstance(index, int) or not 0 <= index < count:
+            raise ValueError(f"{name} must be zero-based in [0, {count - 1}]")
+    overrides = (config or {}).get("baselines", {}).get(method, {})
+    experts = method in _EXPERT_METHODS
+    teacher = method in _TEACHER_METHODS
+    paper_aggregation = method == "consistent_teacher_fedawa" and overrides.get("aggregation_mode", "directional") == "fedawa_paper"
+    head_only_epochs = overrides.get("head_only_epochs", 1)
+    start, end = overrides.get("teacher_decay_start", .99), overrides.get("teacher_decay_end", .999)
+    span = end - start if {"teacher_decay_start", "teacher_decay_end"} & overrides.keys() else .009
+    scheduled = fsslod_ema_decay(round_index, epoch_index) if config is None else start + span * (epochs * round_index + epoch_index) / max(1, rounds * epochs - 1)
+    policy = {
         "method": method, "round_index": round_index, "epoch_index": epoch_index,
         "pseudo_threshold": 0.75,
         "use_unlabeled": method not in {"local", "fedavg", "fedprox", "fedbn"},
@@ -357,17 +437,34 @@ def policy_dict(method: str, round_index: int, epoch_index: int) -> dict[str, An
         "teacher_decay": scheduled if method == "fsslod" else 0.999 if teacher else None,
         "teacher_update_frequency": "after_optimizer_step" if teacher else None,
         "reset_teacher_each_round": method == "fedsto",
-        "freeze_trunk": method == "fedsto" and epoch_index == 0,
+        "freeze_trunk": method == "fedsto" and epoch_index < head_only_epochs,
+        "head_only_epochs": head_only_epochs if method == "fedsto" else None,
         "proximal_mu": 0.01 if method == "fedprox" else 0.0,
         "orthogonal_coefficient": 0.05 if method == "fedsto" else 0.0,
         "elastic_coefficient": 0.10 if method == "fsslod" else 0.0,
-        "consistency_weight": 0.50 if teacher else 0.0,
+        "consistency_weight": float((config or {}).get("loss", {}).get("gamma", .5)) if experts else 0.50 if teacher else 0.0,
         "preserve_client_batchnorm": method == "fedbn",
-        "aggregation": "none" if method == "local" else "adaptive_directional" if method == "consistent_teacher_fedawa" else "expert_state_quality" if experts else "sample_weighted",
-        "aggregation_temperature": 1.0,
-        "aggregation_cap": 0.50 if method == "consistent_teacher_fedawa" else None,
+        "aggregation": "none" if method == "local" else "fedawa_paper" if paper_aggregation else "adaptive_directional" if method == "consistent_teacher_fedawa" else "expert_state_quality" if experts else "sample_weighted",
+        "aggregation_mode": "fedawa_paper" if paper_aggregation else "directional" if method == "consistent_teacher_fedawa" else None,
+        "aggregation_temperature": None if paper_aggregation else 1.0,
+        "aggregation_cap": 0.50 if method == "consistent_teacher_fedawa" and not paper_aggregation else None,
+        "reference_weighting": "uniform" if method == "consistent_teacher_fedawa" and not paper_aggregation else None,
+        "fedawa_steps": 1 if paper_aggregation else None,
+        "fedawa_learning_rate": .001 if paper_aggregation else None,
         "use_corrections": method in {"generic_hc", "tefed"},
         "use_source_verification": method == "tefed",
         "use_state_matched_reuse": method in {"generic_hc", "tefed"},
         "is_new_detector_adaptation": True,
     }
+    policy.update({key: value if key in {"reference_weighting", "aggregation_mode", "head_only_epochs", "fedawa_steps"} else float(value)
+                   for key, value in overrides.items() if key not in {"teacher_decay_start", "teacher_decay_end"}})
+    return policy
+
+
+def policy_schedule(method: str, config: Mapping[str, Any]) -> list[dict[str, Any]]:
+    """Resolve the complete schedule before a run writes any artifacts."""
+    policy_dict(method, 0, 0, config)
+    experiment = config.get("experiment", {})
+    return [policy_dict(method, round_index, epoch_index, config)
+            for round_index in range(experiment.get("rounds", 30))
+            for epoch_index in range(experiment.get("local_epochs", 2))]

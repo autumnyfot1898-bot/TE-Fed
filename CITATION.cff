@@ -7,14 +7,9 @@ authors:
     given-names: Pinghan
   - family-names: Jin
     given-names: Wenquan
-version: 2.6.1
+version: 2.6.2
 date-released: 2026-10-19
 license: AGPL-3.0-only
-abstract: >-
-  TE-Fed combines source-evidence correction and state-matched reuse for
-  federated semi-supervised multisensor object detection. The code includes
-  training, calibration, rendering, evaluation and analysis. Datasets, trained
-  weights and manuscript experiment records are not distributed.
 keywords:
   - federated learning
   - semi-supervised object detection

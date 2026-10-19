@@ -66,6 +66,8 @@ def load_config(path):
 
 def validate_run_config(config):
     """Validate configuration before loading data or creating outputs."""
+    from .baselines import validate_baseline_config
+    validate_baseline_config(config)
     if config.get('communication',{}).get('mode','local') not in {'local','http'}:
         raise ValueError('communication.mode must be local or http')
     experiment = config.get('experiment', {})
@@ -194,8 +196,12 @@ def _modal_inputs(x, sample):
 
 
 @torch.no_grad()
-def assess_frame(model, router, sample, state, calibration, config, *, round_id=0, experts=True):
+def assess_frame(model, router, sample, state, calibration, config, *, round_id=0, experts=True, policy=None):
     from .cues import extract_cues, routing_vector
+    from .baselines import policy_dict
+    if policy is None:
+        policy=policy_dict(config.get('experiment',{}).get('method','tefed'),round_id,0,config)
+    threshold=policy['pseudo_threshold']
     sample=apply_input_policy(sample,config)
     device = next(model.parameters()).device
     rgb_only = config['model'].get('detector_rgb_only',False)
@@ -251,9 +257,9 @@ def assess_frame(model, router, sample, state, calibration, config, *, round_id=
                 fused['cues'] = {'C':fused['C'],'AE':fused['AE'],'AM':post['AM'],'G':post['G'],'S':post['S']}
                 candidate = core.qualify_candidate(fused,state,config.get('decision'))
             else:
-                # Fixed-threshold baseline: reliability is not estimated.
+                # General-head baselines use a confidence threshold.
                 candidate = {**anchor,'id':str(i),'route':[0],'weights':[1.], 'R':1.,'valid':True,
-                             'threshold':.75,'disposition':'qualified' if max(anchor['posterior'])>=.75 else 'suppressed',
+                             'threshold':threshold,'disposition':'qualified' if max(anchor['posterior'])>=threshold else 'suppressed',
                              'cues':{'C':max(anchor['posterior']),'AE':1.,'AM':pre['AM'],'G':pre['G'],'S':pre['S']}}
                 post = pre
             candidate.update(attrs=post['attrs'],availability=post['availability'],rule_flags=post['rule_flags'],
@@ -353,6 +359,7 @@ def _head_weights(item,head):
 
 def train_local(model,items,config,*,round_id=0,method='tefed',teacher=None,reference=None):
     from .baselines import policy_dict,update_ema_teacher,fedsto_set_trainable,proximal_penalty,elastic_penalty,orthogonality_penalty
+    policies=[policy_dict(method,round_id,epoch,config) for epoch in range(int(config['experiment'].get('local_epochs',2)))]
     device=next(model.parameters()).device
     optimcfg=config.get('optimizer',{})
     total_rounds=int(config['experiment'].get('rounds',30))
@@ -379,15 +386,17 @@ def train_local(model,items,config,*,round_id=0,method='tefed',teacher=None,refe
     if batch_size<1:
         raise ValueError('batch_size must be positive')
     ledger={'optimizer_steps':0,'attempted_optimizer_steps':0,'amp_skipped_steps':0,'case_presentations':{},
-            'presentations':{'labeled':0,'pseudo':0,'correction':0},'mean_step_loss':None,'learning_rate':lr}
+            'presentations':{'labeled':0,'pseudo':0,'correction':0},'mean_step_loss':None,'learning_rate':lr,
+            'baseline_policies':[],'teacher_updates':0,'stage_history':[]}
     step_losses=[];alignment_losses=[];consistency_losses=[];matched_consistency=0
     if not items:
         return ledger
-    for epoch in range(int(config['experiment'].get('local_epochs',2))):
-        policy=policy_dict(method,round_id,epoch)
+    for epoch,policy in enumerate(policies):
+        ledger['baseline_policies'].append(deepcopy(policy))
         model.train()
         if method=='fedsto':
-            fedsto_set_trainable(model,epoch)
+            stage=fedsto_set_trainable(model,epoch,head_only_epochs=policy['head_only_epochs'])
+            ledger['stage_history'].append({'epoch_index':epoch,**stage})
         order=np.random.permutation(len(items))
         for start in range(0,len(order),batch_size):
             batch=[items[j] for j in order[start:start+batch_size]]
@@ -396,7 +405,7 @@ def train_local(model,items,config,*,round_id=0,method='tefed',teacher=None,refe
             total=0.
             batch_active=set()
             contrastive_inputs=[];contrastive_samples=[];consistency_sums=[];consistency_count=0
-            consistency_coefficient=float(losses.get('gamma',.5)) if method in {'tefed','generic_hc','server_moe'} else float(policy.get('consistency_weight',0.))
+            consistency_coefficient=float(policy['consistency_weight'])
             alignment_enabled=float(losses.get('rho',.1))>0 and not config['model'].get('detector_rgb_only',False) and not config['model'].get('disable_auxiliary',False)
             for item in batch:
                 sample=item['sample']; targets=sample['targets']
@@ -501,6 +510,7 @@ def train_local(model,items,config,*,round_id=0,method='tefed',teacher=None,refe
                 tracked['applied_step_ids' if executed else 'amp_skipped_step_ids'].append(step_id)
             if teacher is not None and executed:
                 update_ema_teacher(teacher,model,float(policy['teacher_decay']))
+                ledger['teacher_updates']+=1
             ledger['optimizer_steps']+=int(executed)
             ledger['amp_skipped_steps']+=int(not executed)
             step_losses.append(total)
@@ -805,9 +815,28 @@ def validate_renderer_setup(config,policy):
         raise FileNotFoundError(f'Generic rendering script not found: {backend.generic_script_path}')
 
 
+def _validate_aggregation_state(state,policy,clients,next_round,history):
+    if policy['aggregation']!='fedawa_paper':
+        if state is not None:
+            raise ValueError('Unexpected persistent aggregation state')
+        return
+    if next_round==0:
+        if state is not None:
+            raise ValueError('Initial FedAWA aggregation state must be empty')
+        return
+    if not isinstance(state,dict) or set(state)!={'client_ids','logits'} or state['client_ids']!=clients:
+        raise ValueError('FedAWA aggregation state client ordering differs')
+    logits=state['logits']
+    if not isinstance(logits,list) or len(logits)!=len(clients) or any(
+            isinstance(value,bool) or not isinstance(value,(int,float)) or not math.isfinite(value) for value in logits):
+        raise ValueError('FedAWA aggregation state logits are invalid')
+    if history[-1].get('aggregation',{}).get('logits')!=logits:
+        raise ValueError('FedAWA aggregation state differs from the committed ledger')
+
+
 @locked_run
 def run_experiment(config,seed=0,output_dir=None,labels_only=False,resume=None):
-    from .baselines import policy_dict,make_ema_teacher,sample_weighted_aggregate,adaptive_aggregation_weights,batchnorm_state_keys
+    from .baselines import policy_dict,policy_schedule,sample_weighted_aggregate,adaptive_aggregation_weights,batchnorm_state_keys
     from .server import construct_cases,update_router,build_cyclic_routes
     from .client import capture_rng_state,restore_rng_state,execute_client_task
     cfg=deepcopy(config)
@@ -816,7 +845,8 @@ def run_experiment(config,seed=0,output_dir=None,labels_only=False,resume=None):
     cfg['experiment']['seed']=int(seed)
     seed_everything(seed)
     method='fedavg' if labels_only else cfg['experiment'].get('method','tefed')
-    policy=policy_dict(method,0,0)
+    policies=policy_schedule(method,cfg)
+    policy=policies[0]
     cfg['experiment']['method']=method
     from .experiments import validate_factorial_config
     validate_factorial_config(cfg)
@@ -835,6 +865,8 @@ def run_experiment(config,seed=0,output_dir=None,labels_only=False,resume=None):
     clients=sorted({str(r.client_id) for r in manifest.by_split('labeled')})
     if not clients:
         raise ValueError('No participating clients have labeled data')
+    if policy['aggregation']=='adaptive_directional' and (len(clients)<2 or len(clients)*policy['aggregation_cap']<1-1e-12):
+        raise ValueError('Adaptive aggregation requires at least two clients and n * aggregation_cap >= 1')
     if not labels_only and not manifest.by_split('test'):
         raise ValueError('Test records are required for evaluation')
     replay=None
@@ -878,6 +910,10 @@ def run_experiment(config,seed=0,output_dir=None,labels_only=False,resume=None):
             raise ValueError('Resume round boundary is invalid')
         if restored['phase']=='completed' and next_round!=total_rounds:
             raise ValueError('Completed resume snapshot has an incomplete round sequence')
+        history=restored.get('history',[])
+        if len(history)!=next_round or [row['round_index'] for row in history]!=list(range(next_round)):
+            raise ValueError('Resume history is not contiguous')
+        _validate_aggregation_state(restored.get('aggregation_state'),policy,clients,next_round,history)
         reconcile_files(out,restored['files'],restored['next_round'],restored['phase']=='completed')
         if restored['phase']=='completed':
             restore_rng_state(restored['rng'])
@@ -889,18 +925,19 @@ def run_experiment(config,seed=0,output_dir=None,labels_only=False,resume=None):
     router=Router(cfg.get('decision',{}).get('routing_temperature',.5)).to(device)
     initial_hash=inherit_initial(model,initial) if initial and restored is None else None
     if restored is None:
-        write_json(out/'configuration.json',cfg)
+        write_json(out/'configuration.json',{**cfg,'resolved_baseline_policies':policies})
         write_json(out/'calibration.json',calibration)
         write_json(out/'environment.json',{'implementation_status':IMPLEMENTATION_STATUS,'seed':seed,
                 'versions':{k:importlib.metadata.version(k) for k in ['torch','torchvision','ultralytics','numpy']},
                 'device':str(device),'initial_checkpoint_sha256':initial_hash,
                 'calibration_sha256':hashlib.sha256(Path(cfg['experiment']['calibration']).read_bytes()).hexdigest() if not labels_only else None,
                 'manifest_sha256':hashlib.sha256(Path(cfg['experiment']['manifest']).read_bytes()).hexdigest(),
-                'capacity':model.capacity(),'logical_clients':clients,'labels_only_preparation':labels_only,
+                'capacity':model.capacity(),'router_parameters':sum(parameter.numel() for parameter in router.parameters()),
+                'logical_clients':clients,'labels_only_preparation':labels_only,
                 'workers':executor.fingerprints if executor is not None else None})
     prior=calibration.get('state_prior',{'q':.5,'p':.5,'h':[.2]*5})
     states={k:deepcopy(prior) for k in clients}
-    source_states={}; pool=[]; history=[]; previous_state=None
+    source_states={}; pool=[]; history=[]; previous_state=None;aggregation_state=None
     if replay is not None:
         source_states=replay.source_states;pool=replay.pool
     local_models={};bn_cache={};client_runtime={}
@@ -913,6 +950,7 @@ def run_experiment(config,seed=0,output_dir=None,labels_only=False,resume=None):
         router.load_state_dict(restored['router'],strict=True)
         states=restored['states'];source_states=restored['source_states'];pool=restored['pool']
         history=restored['history'];previous_state=restored['previous_state']
+        aggregation_state=restored.get('aggregation_state')
         local_models=restored['local_models'];bn_cache=restored['bn_cache'];client_runtime=restored.get('client_runtime',{})
         start_round=restored['next_round'];journal=restored['files']
         if len(history)!=start_round or [row['round_index'] for row in history]!=list(range(start_round)):
@@ -943,7 +981,8 @@ def run_experiment(config,seed=0,output_dir=None,labels_only=False,resume=None):
         atomic_snapshot(out/'resume.pt',{'resume_schema_version':1,'model_schema_version':model.schema_version,
             'output_dir':str(out),'binding':binding,'phase':phase,'next_round':next_round,
             'model':model.state_dict(),'router':router.state_dict(),'states':states,'source_states':source_states,
-            'pool':pool,'history':history,'previous_state':previous_state,'local_models':local_models,
+            'pool':pool,'history':history,'previous_state':previous_state,'aggregation_state':aggregation_state,
+            'local_models':local_models,
             'bn_cache':bn_cache,'client_runtime':client_runtime,
             'rng':capture_rng_state(),'files':journal,'metrics':metrics or {},
             'replay':replay.state_dict() if replay is not None else None})
@@ -953,6 +992,7 @@ def run_experiment(config,seed=0,output_dir=None,labels_only=False,resume=None):
     if restored is None:
         commit(0)
     for t in range(start_round,int(cfg['experiment'].get('rounds',30))):
+        policy=policy_dict(method,t,0,cfg)
         start_time=time.perf_counter()
         start_ts=time.time()
         if device.startswith('cuda'):
@@ -960,7 +1000,8 @@ def run_experiment(config,seed=0,output_dir=None,labels_only=False,resume=None):
         base=model.export_state()
         states_start=deepcopy(states)
         uploads=[]; trained_states=[]; sample_counts=[]; descriptors=[];round_candidates=[]
-        ledger={'round_index':t,'clients':{},'reuse_selected_ids':{},'selected_creation_rounds':{}}
+        ledger={'round_index':t,'clients':{},'reuse_selected_ids':{},'selected_creation_rounds':{},
+                'baseline_policy':deepcopy(policy)}
         if replay is not None:
             ledger['replay']=replay.metadata()
         next_states={}
@@ -1020,15 +1061,33 @@ def run_experiment(config,seed=0,output_dir=None,labels_only=False,resume=None):
             previous_state=base
             model.import_state(aggregate['state'])
             ledger['aggregation']={k:v for k,v in aggregate.items() if k!='state'}
+            ledger['aggregation']['baseline_policy']=deepcopy(policy)
         else:
             weights=sample_counts
+            aggregation_details={}
             if policy['aggregation']=='adaptive_directional':
                 parameter_names=set(dict(model.named_parameters()))
                 vectors=[np.concatenate([u['backbone'][k].ravel() for k in sorted(u['backbone']) if k in parameter_names]) for u in [tree_delta(s,base) for s in trained_states]]
-                weights=adaptive_aggregation_weights(vectors,temperature=1.,cap=.5)
+                weights=adaptive_aggregation_weights(vectors,
+                    sample_counts=sample_counts if policy['reference_weighting']=='sample_count' else None,
+                    temperature=policy['aggregation_temperature'],cap=policy['aggregation_cap'])
+            elif policy['aggregation']=='fedawa_paper':
+                from .fedawa import flatten_parameters,paper_aggregation_weights
+                parameter_names=set(dict(model.named_parameters()))
+                aggregation_details=paper_aggregation_weights(
+                    [flatten_parameters(state,parameter_names) for state in trained_states],
+                    flatten_parameters(base,parameter_names),
+                    logits=None if aggregation_state is None else aggregation_state['logits'],
+                    sample_counts=sample_counts,steps=policy['fedawa_steps'],
+                    learning_rate=policy['fedawa_learning_rate'])
+                weights=aggregation_details['weights']
+                aggregation_state={'client_ids':list(clients),'logits':list(aggregation_details['logits'])}
             keep=batchnorm_state_keys(model) if method=='fedbn' else set()
             aggregate=sample_weighted_aggregate(trained_states,weights,previous=base,keep_predicate=lambda key:key in keep)
             model.import_state(aggregate)
+            normalized=np.asarray(weights,dtype=np.float64);normalized=normalized/normalized.sum()
+            ledger['aggregation']={**aggregation_details,'baseline_policy':deepcopy(policy),
+                                   'weights':dict(zip(clients,normalized.tolist()))}
         if policy['use_experts'] and not labels_only and cfg.get('router',{}).get('steps',20)>0:
             ledger['router']=update_router(model,router,manifest,pool,source_states,states_start,calibration,cfg,t,
                                            descriptors=created.get('scored_descriptors',descriptors))

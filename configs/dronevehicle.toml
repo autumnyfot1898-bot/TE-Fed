@@ -63,3 +63,32 @@ monitor_every = 1
 views = ["participating", "unseen", "new-client", "hard"]
 prediction_confidence = 0.01
 max_detections = 100
+
+[baselines.confidence]
+pseudo_threshold = 0.75
+
+[baselines.fedprox]
+proximal_mu = 0.01
+
+[baselines.consistent_teacher_fedawa]
+pseudo_threshold = 0.75
+teacher_decay = 0.999
+consistency_weight = 0.5
+aggregation_mode = "directional"
+aggregation_temperature = 1.0
+aggregation_cap = 0.5
+reference_weighting = "uniform"
+
+[baselines.fedsto]
+pseudo_threshold = 0.75
+teacher_decay = 0.999
+consistency_weight = 0.5
+head_only_epochs = 1
+orthogonal_coefficient = 0.05
+
+[baselines.fsslod]
+pseudo_threshold = 0.75
+teacher_decay_start = 0.99
+teacher_decay_end = 0.999
+consistency_weight = 0.5
+elastic_coefficient = 0.1

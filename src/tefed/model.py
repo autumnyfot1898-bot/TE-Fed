@@ -58,6 +58,18 @@ class ExpertHead(nn.Module):
     def forward(self, features):
         return self.detect([layer(x) for layer, x in zip(self.projection, features)])
 
+    def predict_raw(self, features):
+        """Run only the native prediction branch."""
+        projected = [layer(x) for layer, x in zip(self.projection, features)]
+        branch = self.detect.one2one if self.detect.end2end else self.detect.one2many
+        return self.detect.forward_head(projected, **branch)
+
+    def prediction_parameters(self):
+        branch = self.detect.one2one if self.detect.end2end else self.detect.one2many
+        modules = [self.projection, self.detect.dfl, *branch.values()]
+        parameters = {id(p): p for module in modules for p in module.parameters()}
+        return sum(p.numel() for p in parameters.values())
+
 
 class RoutedYOLO(nn.Module):
     schema_version = 2
@@ -232,7 +244,7 @@ class RoutedYOLO(nn.Module):
             result = {}
             for m in sorted(set(active_heads)):
                 head = self.heads[int(m)]
-                output = head(features)
+                output = head.predict_raw(features)
                 decoded = self.decode_head(output, m, x.shape[-2:], branch='one2one')
                 logits, boxes = decoded['logits'], decoded['boxes']
                 posterior = (logits / temperature).softmax(-1)
@@ -282,13 +294,32 @@ class RoutedYOLO(nn.Module):
             sd[key] = torch.as_tensor(arr, device=sd[key].device, dtype=sd[key].dtype)
         self.load_state_dict(sd, strict=True)
 
-    def capacity(self):
+    def capacity(self, active_heads=None):
+        """Count detector storage and the executed prediction parameter subset."""
+        if active_heads is None:
+            active_heads = tuple(range(min(3, len(self.heads))))
+        active_heads = tuple(active_heads)
+        if (not active_heads or any(isinstance(i, bool) or not isinstance(i, int)
+                                    or not 0 <= i < len(self.heads) for i in active_heads)
+                or len(set(active_heads)) != len(active_heads)):
+            raise ValueError('active_heads must contain distinct valid head indices')
+        shared_prediction = sum(p.numel() for module in [self.trunk, self.fusion]
+                                for p in module.parameters())
+        prediction_heads = [head.prediction_parameters() for head in self.heads]
         return {'total_parameters': sum(p.numel() for p in self.parameters()),
                 'shared_parameters': sum(p.numel() for p in self.trunk.parameters()) +
                                      sum(p.numel() for p in self.fusion.parameters()) +
                                      sum(p.numel() for p in self.contrastive_projection.parameters()),
                 'contrastive_parameters': sum(p.numel() for p in self.contrastive_projection.parameters()),
-                'head_parameters': [sum(p.numel() for p in h.parameters()) for h in self.heads]}
+                'head_parameters': [sum(p.numel() for p in h.parameters()) for h in self.heads],
+                'prediction_shared_parameters': shared_prediction,
+                'prediction_head_parameters': prediction_heads,
+                'active_heads': list(active_heads),
+                'active_prediction_parameters': shared_prediction + sum(prediction_heads[i] for i in active_heads),
+                'all_heads_prediction_parameters': shared_prediction + sum(prediction_heads),
+                'scope': 'unfused detector; storage includes both native training branches and contrastive projection; '
+                         'prediction uses the native prediction branch and excludes the contrastive projection; '
+                         'router, EMA teacher, buffers, optimizer state and repeated cue forwards are excluded'}
 
 
 class Router(nn.Module):

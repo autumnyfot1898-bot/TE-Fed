@@ -1,3 +1,0 @@
-# Preserve executed evidence bytes.
-docs/cpu_test_output.txt -text
-docs/cuda_test_output.txt -text

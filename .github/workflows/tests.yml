@@ -1,7 +1,37 @@
-name: Software tests
-on: [push, pull_request]
+name: Source checks
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      run_full_tests:
+        description: Run full CPU tests, including optimizer updates
+        type: boolean
+        default: false
+        required: false
+permissions:
+  contents: read
 jobs:
+  source:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: '0.13.1'
+          enable-cache: true
+      - run: uv lock --check
+      - run: uvx --from ruff==0.17.1 ruff check --select F821,F822,F823 src tests scripts
+      - run: python -m compileall -q src tests scripts
+      - run: uv sync --locked
+      - run: uv run --locked python -m tefed --help
+      - run: uv run --locked python -m tefed methods
   cpu:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_full_tests }}
+    needs: source
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

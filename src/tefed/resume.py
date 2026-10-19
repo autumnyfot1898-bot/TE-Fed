@@ -98,6 +98,11 @@ def run_lock(output):
 def locked_run(function):
     @wraps(function)
     def wrapped(config,seed=0,output_dir=None,**kwargs):
+        from .engine import validate_run_config
+        from .baselines import policy_schedule
+        validate_run_config(config)
+        method='fedavg' if kwargs.get('labels_only',False) else config.get('experiment',{}).get('method','tefed')
+        policy_schedule(method,config)
         output=Path(output_dir or Path(config.get('experiment',{}).get('output','runs/tefed'))/f'seed_{seed}').resolve()
         with run_lock(output):
             return function(config,seed=seed,output_dir=output,**kwargs)

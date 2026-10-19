@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Normalize explicit data partitions; see docs/DATA.md."""
+"""Normalize explicit data partitions."""
 from __future__ import annotations
 
 from collections import defaultdict

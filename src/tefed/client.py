@@ -53,8 +53,8 @@ def initialize_client_state(model, router, manifest, calibration, config, *, cli
         raise ValueError(f'Client {client_id} has no validation pool')
     prior = prior or calibration.get('state_prior', {'q': .5, 'p': .5, 'h': [.2] * 5})
     samples = [prepared_sample(record, config) for record in records]
-    policy = policy_dict(config['experiment'].get('method', 'tefed'), 0, 0)
-    assessed = [assess_frame(model, router, sample, prior, calibration, config, experts=policy['use_experts']) for sample in samples]
+    policy = policy_dict(config['experiment'].get('method', 'tefed'), 0, 0, config)
+    assessed = [assess_frame(model, router, sample, prior, calibration, config, experts=policy['use_experts'], policy=policy) for sample in samples]
     return initialize_state(_state_statistics(samples, assessed, calibration))
 
 
@@ -70,7 +70,7 @@ def execute_client_round(model, router, manifest, state, calibration, config, *,
 
     client_id = str(client_id)
     method = config['experiment'].get('method', 'tefed')
-    policy = policy_dict(method, round_index, 0)
+    policy = policy_dict(method, round_index, 0, config)
     persistent = deepcopy(persistent_state or {})
     if set(persistent) - {'local_model', 'teacher', 'bn', 'new_client_model'}:
         raise ValueError('Unknown persistent client state')
@@ -104,7 +104,7 @@ def execute_client_round(model, router, manifest, state, calibration, config, *,
         load_module_state(old_teacher, persistent['teacher'])
     assessment_model = old_teacher if old_teacher is not None and policy['use_teacher'] and not policy['reset_teacher_each_round'] else model
     assessed = [assess_frame(assessment_model, router, sample, state, calibration, config,
-                            round_id=round_index, experts=policy['use_experts']) for sample in unlabeled]
+                            round_id=round_index, experts=policy['use_experts'], policy=policy) for sample in unlabeled]
     active = {0}
     for assessment in assessed:
         for candidate in assessment['candidates']:
@@ -148,6 +148,7 @@ def execute_client_round(model, router, manifest, state, calibration, config, *,
         from .replay import validate_replay_before
         validate_replay_before(items, config, replay_control)
     ledger = train_local(student, items, config, round_id=round_index, method=method, teacher=teacher, reference=model)
+    ledger['assessment_policy']=deepcopy(policy)
     dispositions=[candidate['disposition'] for assessment in assessed for candidate in assessment['candidates']]
     ledger['candidate_counts']={name:dispositions.count(name) for name in ('qualified','correction','suppressed')}
     ledger['candidate_counts']['total']=len(dispositions)

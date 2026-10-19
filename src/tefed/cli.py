@@ -42,7 +42,7 @@ def parser():
     evaluate.add_argument('--checkpoint',required=True)
     evaluate.add_argument('--config',required=True)
     evaluate.add_argument('--output',required=True)
-    smoke=commands.add_parser('smoke',help='Run the synthetic software fixture')
+    smoke=commands.add_parser('smoke',help='Run a smoke test with generated inputs')
     smoke.add_argument('--output',required=True)
     smoke.add_argument('--device',default='cpu',help='PyTorch device, e.g. cpu or cuda:0')
     smoke.add_argument('--amp',action='store_true',help='Enable CUDA mixed precision')
