@@ -29,6 +29,8 @@ jobs:
       - run: uv sync --locked
       - run: uv run --locked python -m tefed --help
       - run: uv run --locked python -m tefed methods
+      - run: uv run --locked python -m unittest tests.test_trimodal_preview -v
+      - run: uv run --locked python -m tefed preview --example examples/tomato_trimodal --output runs/tomato_preview
   cpu:
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_full_tests }}
     needs: source

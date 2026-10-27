@@ -1,4 +1,4 @@
-"""Command-line entry points for data validation, training and evaluation."""
+"""Command-line entry points for preview, inference, training and evaluation."""
 from __future__ import annotations
 import argparse
 from copy import deepcopy
@@ -17,10 +17,26 @@ def positive_integer(value):
 
 
 def parser():
-    p=argparse.ArgumentParser(prog='tefed',description='TE-Fed training and evaluation')
+    p=argparse.ArgumentParser(prog='tefed',description='TE-Fed input preview, inference, training and evaluation')
     p.add_argument('--version',action='version',version=f'%(prog)s {__version__}')
     commands=p.add_subparsers(dest='command',required=True)
     commands.add_parser('methods',help='List implemented comparison strategies')
+    preview=commands.add_parser('preview',help='Preview RGB, depth and NIR inputs without a checkpoint')
+    preview.add_argument('--example',required=True,help='Example directory containing manifest.json and original PNGs')
+    preview.add_argument('--output',required=True,help='New directory for preview images and display metadata')
+    infer=commands.add_parser('infer',help='Run frozen single-sample inference with a compatible TE-Fed checkpoint')
+    infer.add_argument('--checkpoint',required=True)
+    infer.add_argument('--calibration',required=True,help='Frozen calibration JSON associated with the checkpoint')
+    infer.add_argument('--rgb',required=True)
+    infer.add_argument('--depth',required=True)
+    infer.add_argument('--nir',required=True,help='Prepared uint8 PNG or floating-point [0,1] NPY; not the preview display image')
+    infer.add_argument('--sample-id',required=True)
+    infer.add_argument('--client-id',required=True,help='Client whose frozen state exists in the checkpoint')
+    infer.add_argument('--output',required=True,help='New directory for predictions and the RGB overlay')
+    infer.add_argument('--device',default='cpu')
+    infer.add_argument('--display-confidence',type=float,default=.25,help='Overlay threshold only; all model candidates remain in predictions.json')
+    infer.add_argument('--class-names',help='Optional JSON mapping of class IDs to names')
+    infer.add_argument('--round-id',type=int,default=0,help='Reference-augmentation seed context; existing evaluation defaults to 0')
     validate=commands.add_parser('validate',help='Check manifests and partition/calibration identities')
     validate.add_argument('manifest')
     validate.add_argument('--check-files',action='store_true')
@@ -103,6 +119,30 @@ def _calibrate(args):
 
 def main(argv=None):
     args=parser().parse_args(argv)
+    if args.command=='preview':
+        from .preview import preview_example
+        try:
+            result=preview_example(args.example,args.output)
+        except (OSError,ValueError,TypeError,KeyError) as error:
+            parser().exit(2,f'Preview failed: {error}\n')
+        print(json.dumps({'output':str(Path(args.output).resolve()),'images':result['outputs'],
+                          'inference_executed':False},ensure_ascii=False,indent=2))
+        return 0
+    if args.command=='infer':
+        try:
+            from .inference import run_inference
+        except ModuleNotFoundError as error:
+            parser().exit(2,f'Inference dependencies are unavailable ({error}). Run uv sync --locked --extra cpu.\n')
+        try:
+            result=run_inference(checkpoint=args.checkpoint,calibration=args.calibration,
+                rgb=args.rgb,depth=args.depth,nir=args.nir,sample_id=args.sample_id,
+                client_id=args.client_id,output=args.output,device=args.device,
+                display_confidence=args.display_confidence,class_names=args.class_names,
+                round_id=args.round_id)
+        except (OSError,ValueError,TypeError,KeyError,RuntimeError) as error:
+            parser().exit(2,f'Inference failed: {error}\n')
+        print(json.dumps(result,ensure_ascii=False,indent=2))
+        return 0
     if args.command=='methods':
         from .baselines import METHOD_REGISTRY
         for key,description in METHOD_REGISTRY.items():

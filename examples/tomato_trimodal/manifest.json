@@ -1,0 +1,68 @@
+{
+  "status": "PAIRED_SOURCE_INPUT_MODALITIES",
+  "condition": "微弱光",
+  "source_filename": "1.png",
+  "pairing_rule": "same condition and same filename in RGB, Depth and Infrared folders",
+  "image_size": [
+    1280,
+    720
+  ],
+  "hardware_timestamp_check": "not performed",
+  "hard_test_membership": "not established by this visualization",
+  "inference_executed": false,
+  "display_mappings": {
+    "depth": {
+      "mapping": "global linear clipping to positive-pixel 1st and 99th percentiles",
+      "vmin": 307.0,
+      "vmax": 1164.0,
+      "colormap": "viridis",
+      "zero_display": "black",
+      "raw_dtype": "uint16",
+      "raw_min": 0,
+      "raw_max": 3471,
+      "physical_units": "not assigned for this display example"
+    },
+    "nir": {
+      "mapping": "global linear clipping to positive-pixel 1st and 99th percentiles",
+      "vmin": 21.0,
+      "vmax": 1561.0,
+      "colormap": "gray",
+      "zero_display": "black",
+      "raw_dtype": "uint16",
+      "raw_min": 0,
+      "raw_max": 2684,
+      "physical_units": "not assigned for this display example"
+    }
+  },
+  "files": {
+    "rgb": {
+      "path": "inputs/rgb.png",
+      "sha256": "4442db2be7a70f68428fcf75257e3247819e92c892ba67e81165bb06269c7d18",
+      "dtype": "uint8",
+      "shape": [
+        720,
+        1280,
+        3
+      ]
+    },
+    "depth": {
+      "path": "inputs/depth.png",
+      "sha256": "edc63bb39949064b6eb5214eca59a336cef238ab39d03d227806095b3b56ae6e",
+      "dtype": "uint16",
+      "shape": [
+        720,
+        1280
+      ]
+    },
+    "nir": {
+      "path": "inputs/nir.png",
+      "sha256": "59c85934146ff4f4bc5d5042a3bebc8ef63f9284349399da0cbf4e58b1b3ffee",
+      "dtype": "uint16",
+      "shape": [
+        720,
+        1280
+      ]
+    }
+  },
+  "dataset_reference": "https://doi.org/10.11922/11-6035.csd.2023.0154.zh"
+}
